@@ -151,21 +151,21 @@ dfm_params = {
     "random_seed": config.RANDOM_SEED
 }
 
-# print("Training DeepFM module...")
-# y_train_dfm, y_test_dfm = _run_base_model_dfm(dfTrain, dfTest, folds, dfm_params)
+print("Training DeepFM module...")
+y_train_dfm, y_test_dfm = _run_base_model_dfm(dfTrain, dfTest, folds, dfm_params)
 
 # # ------------------ FM Model ------------------
-# fm_params = dfm_params.copy()
-# fm_params["use_deep"] = False
-# print("Training FM module...")
-# y_train_fm, y_test_fm = _run_base_model_dfm(dfTrain, dfTest, folds, fm_params)
+fm_params = dfm_params.copy()
+fm_params["use_deep"] = False
+print("Training FM module...")
+y_train_fm, y_test_fm = _run_base_model_dfm(dfTrain, dfTest, folds, fm_params)
 
 
 # # ------------------ DNN Model ------------------
-# dnn_params = dfm_params.copy()
-# dnn_params["use_fm"] = False
-# print("Training DNN module...")
-# y_train_dnn, y_test_dnn = _run_base_model_dfm(dfTrain, dfTest, folds, dnn_params)
+dnn_params = dfm_params.copy()
+dnn_params["use_fm"] = False
+print("Training DNN module...")
+y_train_dnn, y_test_dnn = _run_base_model_dfm(dfTrain, dfTest, folds, dnn_params)
 
 
 # ------------------ LR Model ------------------

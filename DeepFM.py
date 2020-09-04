@@ -9,10 +9,10 @@ Reference:
 import numpy as np
 import tensorflow as tf
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, auc
 from time import time
 from tensorflow.contrib.layers.python.layers import batch_norm as batch_norm
-from yellowfin import YFOptimizer
+# from yellowfin import YFOptimizer
 
 
 class DeepFM(BaseEstimator, TransformerMixin):
@@ -25,6 +25,7 @@ class DeepFM(BaseEstimator, TransformerMixin):
                  batch_norm=0, batch_norm_decay=0.995,
                  verbose=False, random_seed=2016,
                  use_fm=True, use_deep=True,
+                 module_name="DeepFM",
                  loss_type="logloss", eval_metric=roc_auc_score,
                  l2_reg=0.0, greater_is_better=True):
         assert (use_fm or use_deep)
@@ -41,6 +42,7 @@ class DeepFM(BaseEstimator, TransformerMixin):
         self.deep_layers_activation = deep_layers_activation
         self.use_fm = use_fm
         self.use_deep = use_deep
+        self.module_name = module_name
         self.l2_reg = l2_reg
 
         self.epoch = epoch
@@ -84,6 +86,7 @@ class DeepFM(BaseEstimator, TransformerMixin):
             feat_value = tf.reshape(self.feat_value, shape=[-1, self.field_size, 1])
             self.embeddings = tf.multiply(self.embeddings, feat_value)
 
+            # ---------- FM part -----------
             # ---------- first order term ----------
             self.y_first_order = tf.nn.embedding_lookup(self.weights["feature_bias"], self.feat_index) # None * F * 1
             self.y_first_order = tf.reduce_sum(tf.multiply(self.y_first_order, feat_value), 2)  # None * F
@@ -112,13 +115,19 @@ class DeepFM(BaseEstimator, TransformerMixin):
                 self.y_deep = self.deep_layers_activation(self.y_deep)
                 self.y_deep = tf.nn.dropout(self.y_deep, self.dropout_keep_deep[1+i]) # dropout at each Deep layer
 
-            # ---------- DeepFM ----------
-            if self.use_fm and self.use_deep:
-                concat_input = tf.concat([self.y_first_order, self.y_second_order, self.y_deep], axis=1)
-            elif self.use_fm:
-                concat_input = tf.concat([self.y_first_order, self.y_second_order], axis=1)
-            elif self.use_deep:
-                concat_input = self.y_deep
+            # ---------- Choose module structure ----------
+            if self.module_name == "DeepFM":
+                if self.use_fm and self.use_deep: # DeepFM
+                    concat_input = tf.concat([self.y_first_order, self.y_second_order, self.y_deep], axis=1)
+                elif self.use_fm: # FM
+                    concat_input = tf.concat([self.y_first_order, self.y_second_order], axis=1)
+                elif self.use_deep: # DNN
+                    concat_input = self.y_deep
+            if self.module_name == "LR": # LR
+                concat_input = self.y_first_order
+            if self.module_name == "WideDeep": # Wide & Deep module
+                concat_input = tf.concat([self.y_first_order, self.y_deep], axis=1)
+
             self.out = tf.add(tf.matmul(concat_input, self.weights["concat_projection"]), self.weights["concat_bias"])
 
             # loss
@@ -148,9 +157,9 @@ class DeepFM(BaseEstimator, TransformerMixin):
             elif self.optimizer_type == "momentum":
                 self.optimizer = tf.train.MomentumOptimizer(learning_rate=self.learning_rate, momentum=0.95).minimize(
                     self.loss)
-            elif self.optimizer_type == "yellowfin":
-                self.optimizer = YFOptimizer(learning_rate=self.learning_rate, momentum=0.0).minimize(
-                    self.loss)
+            # elif self.optimizer_type == "yellowfin":
+            #     self.optimizer = YFOptimizer(learning_rate=self.learning_rate, momentum=0.0).minimize(
+            #         self.loss)
 
             # init
             self.saver = tf.train.Saver()
@@ -204,12 +213,18 @@ class DeepFM(BaseEstimator, TransformerMixin):
                 dtype=np.float32)  # 1 * layer[i]
 
         # final concat projection layer
-        if self.use_fm and self.use_deep:
-            input_size = self.field_size + self.embedding_size + self.deep_layers[-1]
-        elif self.use_fm:
-            input_size = self.field_size + self.embedding_size
-        elif self.use_deep:
-            input_size = self.deep_layers[-1]
+        if self.module_name == "DeepFM":
+            if self.use_fm and self.use_deep:
+                input_size = self.field_size + self.embedding_size + self.deep_layers[-1]
+            elif self.use_fm:
+                input_size = self.field_size + self.embedding_size
+            elif self.use_deep:
+                input_size = self.deep_layers[-1]
+        elif self.module_name == "LR":
+            input_size = self.field_size
+        elif self.module_name == "WideDeep":
+            input_size = self.field_size + self.deep_layers[-1]
+
         glorot = np.sqrt(2.0 / (input_size + 1))
         weights["concat_projection"] = tf.Variable(
                         np.random.normal(loc=0, scale=glorot, size=(input_size, 1)),
@@ -381,5 +396,7 @@ class DeepFM(BaseEstimator, TransformerMixin):
         :return: metric of the evaluation
         """
         y_pred = self.predict(Xi, Xv)
+        # y_pred = [1-yp for yp in y_pred]
+        # print("y_pred: ", y_pred[:10], max(y_pred), min(y_pred))
         return self.eval_metric(y, y_pred)
 

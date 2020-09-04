@@ -1,4 +1,3 @@
-
 import os
 import sys
 
@@ -11,6 +10,7 @@ from sklearn.model_selection import StratifiedKFold
 
 import config
 from metrics import gini_norm
+from sklearn.metrics import roc_auc_score, auc
 from DataReader import FeatureDictionary, DataParser
 sys.path.append("..")
 from DeepFM import DeepFM
@@ -78,12 +78,16 @@ def _run_base_model_dfm(dfTrain, dfTest, folds, dfm_params):
     y_test_meta /= float(len(folds))
 
     # save result
-    if dfm_params["use_fm"] and dfm_params["use_deep"]:
-        clf_str = "DeepFM"
-    elif dfm_params["use_fm"]:
-        clf_str = "FM"
-    elif dfm_params["use_deep"]:
-        clf_str = "DNN"
+    if dfm_params["module_name"] == "DeepFM":
+        if dfm_params["use_fm"] and dfm_params["use_deep"]:
+            clf_str = "DeepFM"
+        elif dfm_params["use_fm"]:
+            clf_str = "FM"
+        elif dfm_params["use_deep"]:
+            clf_str = "DNN"
+    elif dfm_params["module_name"] == "LR": clf_str = "LR"
+    elif dfm_params["module_name"] == "WideDeep": clf_str = "WideDeep"
+
     print("%s: %.5f (%.5f)"%(clf_str, gini_results_cv.mean(), gini_results_cv.std()))
     filename = "%s_Mean%.5f_Std%.5f.csv"%(clf_str, gini_results_cv.mean(), gini_results_cv.std())
     _make_submission(ids_test, y_test_meta, filename)
@@ -109,7 +113,7 @@ def _plot_fig(train_results, valid_results, model_name):
         legends.append("train-%d"%(i+1))
         legends.append("valid-%d"%(i+1))
     plt.xlabel("Epoch")
-    plt.ylabel("Normalized Gini")
+    plt.ylabel("AUC")
     plt.title("%s"%model_name)
     plt.legend(legends)
     plt.savefig("./fig/%s.png"%model_name)
@@ -129,6 +133,7 @@ folds = list(StratifiedKFold(n_splits=config.NUM_SPLITS, shuffle=True,
 dfm_params = {
     "use_fm": True,
     "use_deep": True,
+    "module_name": "DeepFM",
     "embedding_size": 8,
     "dropout_fm": [1.0, 1.0],
     "deep_layers": [32, 32],
@@ -142,21 +147,36 @@ dfm_params = {
     "batch_norm_decay": 0.995,
     "l2_reg": 0.01,
     "verbose": True,
-    "eval_metric": gini_norm,
+    "eval_metric": roc_auc_score,
     "random_seed": config.RANDOM_SEED
 }
-y_train_dfm, y_test_dfm = _run_base_model_dfm(dfTrain, dfTest, folds, dfm_params)
 
-# ------------------ FM Model ------------------
-fm_params = dfm_params.copy()
-fm_params["use_deep"] = False
-y_train_fm, y_test_fm = _run_base_model_dfm(dfTrain, dfTest, folds, fm_params)
+# print("Training DeepFM module...")
+# y_train_dfm, y_test_dfm = _run_base_model_dfm(dfTrain, dfTest, folds, dfm_params)
 
-
-# ------------------ DNN Model ------------------
-dnn_params = dfm_params.copy()
-dnn_params["use_fm"] = False
-y_train_dnn, y_test_dnn = _run_base_model_dfm(dfTrain, dfTest, folds, dnn_params)
+# # ------------------ FM Model ------------------
+# fm_params = dfm_params.copy()
+# fm_params["use_deep"] = False
+# print("Training FM module...")
+# y_train_fm, y_test_fm = _run_base_model_dfm(dfTrain, dfTest, folds, fm_params)
 
 
+# # ------------------ DNN Model ------------------
+# dnn_params = dfm_params.copy()
+# dnn_params["use_fm"] = False
+# print("Training DNN module...")
+# y_train_dnn, y_test_dnn = _run_base_model_dfm(dfTrain, dfTest, folds, dnn_params)
 
+
+# ------------------ LR Model ------------------
+lr_params = dfm_params.copy()
+lr_params["module_name"] = "LR"
+print("Training LR module...")
+y_train_lr, y_test_lr = _run_base_model_dfm(dfTrain, dfTest, folds, lr_params)
+
+
+# ------------------ WideDeep Model ------------------
+wd_params = dfm_params.copy()
+wd_params["module_name"] = "WideDeep"
+print("Training WideDeep module...")
+y_train_wd, y_test_wd = _run_base_model_dfm(dfTrain, dfTest, folds, wd_params)
